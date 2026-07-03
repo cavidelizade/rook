@@ -7,6 +7,7 @@ import "../agent/state" { AgentState }
 import "../ui/transcript" { Entry }
 import "../ui/theme" { Theme }
 import "../ui/themes" { startup_theme }
+import "../ui/depth" { themed }
 import "../config/config" { resolve_model, resolve_base, resolve_key, resolve_theme, save_model }
 
 struct Chat {
@@ -71,7 +72,7 @@ fun chat_init() -> Chat {
         pick_sel: 0,
         entering_key: false,
         key_input: TextInput.new(),
-        theme: startup_theme(resolve_theme()),
+        theme: themed(startup_theme(resolve_theme())),
         theme_picking: false,
         theme_sel: 0,
         theme_prev: "",

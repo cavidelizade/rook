@@ -15,6 +15,7 @@ import "../commands" { Command, parse_command }
 import "../config/catalog" { catalog, index_of }
 import "../config/config" { provider_of, key_needed, save_key, save_theme }
 import "../ui/themes" { all_themes, theme_by_name, theme_index }
+import "../ui/depth" { themed }
 
 const HELP_TEXT: String = "Commands: /help shows this, /clear wipes the conversation, /model switches model, /theme switches the color theme, /key sets the current provider's API key, /quit exits. Anything else goes to the model, which can read, search, edit files and run commands (you approve the changes). Esc interrupts; ctrl+c twice quits."
 
@@ -239,23 +240,23 @@ fun _theme_pick_key(m: Chat, k: Key) -> Step<Chat> {
             if m.theme_sel > 0 {
                 m.theme_sel = m.theme_sel - 1
             }
-            m.theme = items[m.theme_sel]
+            m.theme = themed(items[m.theme_sel])
         },
         Down -> {
             if m.theme_sel < items.len() - 1 {
                 m.theme_sel = m.theme_sel + 1
             }
-            m.theme = items[m.theme_sel]
+            m.theme = themed(items[m.theme_sel])
         },
         Enter -> {
-            m.theme = items[m.theme_sel]
+            m.theme = themed(items[m.theme_sel])
             save_theme(m.theme.name)
             m.theme_picking = false
             m.entries.push(Entry.Notice("theme set to ${m.theme.name}"))
             m.scroll_up = 0
         },
         Esc -> {
-            m.theme = theme_by_name(m.theme_prev)
+            m.theme = themed(theme_by_name(m.theme_prev))
             m.theme_picking = false
         },
         _ -> {},
@@ -353,7 +354,7 @@ fun _submit(m: Chat) -> Step<Chat> {
             if idx < 0 {
                 m.entries.push(Entry.Notice("no theme named ${name}; /theme lists them"))
             } else {
-                m.theme = all_themes()[idx]
+                m.theme = themed(all_themes()[idx])
                 save_theme(m.theme.name)
                 m.entries.push(Entry.Notice("theme set to ${m.theme.name}"))
             }

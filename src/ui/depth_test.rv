@@ -1,0 +1,67 @@
+import std/test { assert_eq_str, assert_true }
+import "github.com/martian56/plumage/style" { Style, Color }
+import "./depth" { Depth, depth_from, adapt_theme, adapt_color }
+import "./themes" { theme_by_name }
+
+fun tag(d: Depth) -> String {
+    return match d {
+        Full -> "full",
+        Ansi256 -> "256",
+        Ansi16 -> "16",
+    }
+}
+
+fun ctag(c: Color) -> String {
+    return match c {
+        Rgb(r, g, b) -> "rgb:${r},${g},${b}",
+        Indexed(i) -> "idx:${i}",
+        Gray -> "gray",
+        _ -> "named",
+    }
+}
+
+fun test_detection_reads_colorterm_then_term() {
+    assert_eq_str(tag(depth_from("truecolor", "xterm-256color", "linux")), "full")
+    assert_eq_str(tag(depth_from("24bit", "xterm", "linux")), "full")
+    assert_eq_str(tag(depth_from("", "xterm-256color", "linux")), "256")
+    assert_eq_str(tag(depth_from("", "screen-256color", "linux")), "256")
+    assert_eq_str(tag(depth_from("", "xterm", "linux")), "16")
+    assert_eq_str(tag(depth_from("", "vt100", "linux")), "16")
+}
+
+fun test_bare_windows_console_is_full_depth() {
+    assert_eq_str(tag(depth_from("", "", "windows")), "full")
+    assert_eq_str(tag(depth_from("", "", "linux")), "16")
+}
+
+fun test_full_depth_leaves_colors_alone() {
+    assert_eq_str(ctag(adapt_color(Color.Rgb(215, 119, 87), Depth.Full)), "rgb:215,119,87")
+}
+
+fun test_named_colors_pass_through_at_any_depth() {
+    assert_eq_str(ctag(adapt_color(Color.Gray, Depth.Ansi16)), "gray")
+    assert_eq_str(ctag(adapt_color(Color.Indexed(42), Depth.Ansi256)), "idx:42")
+}
+
+fun test_rgb_quantizes_to_the_256_cube() {
+    assert_eq_str(ctag(adapt_color(Color.Rgb(0, 0, 0), Depth.Ansi256)), "idx:16")
+    assert_eq_str(ctag(adapt_color(Color.Rgb(255, 255, 255), Depth.Ansi256)), "idx:231")
+    assert_eq_str(ctag(adapt_color(Color.Rgb(95, 135, 175), Depth.Ansi256)), "idx:67")
+}
+
+fun test_middle_grays_take_the_grayscale_ramp() {
+    assert_eq_str(ctag(adapt_color(Color.Rgb(128, 128, 128), Depth.Ansi256)), "idx:244")
+}
+
+fun test_rgb_quantizes_to_the_basic_16() {
+    assert_eq_str(ctag(adapt_color(Color.Rgb(0, 0, 0), Depth.Ansi16)), "idx:0")
+    assert_eq_str(ctag(adapt_color(Color.Rgb(255, 255, 255), Depth.Ansi16)), "idx:15")
+    assert_eq_str(ctag(adapt_color(Color.Rgb(250, 10, 5), Depth.Ansi16)), "idx:9")
+}
+
+fun test_adapting_a_theme_keeps_its_name_and_flags() {
+    let t = adapt_theme(theme_by_name("Dracula"), Depth.Ansi256)
+    assert_eq_str(t.name, "Dracula")
+    assert_true(ctag(t.accent.fg) != ctag(t.error.fg))
+    assert_eq_str(ctag(t.accent.fg).substring(0, 4), "idx:")
+}

@@ -87,7 +87,9 @@ Built-in themes: Rook and Rook Light, Dracula, Gruvbox Dark and Light,
 Nord, Solarized Dark and Light, Catppuccin Mocha and Latte, Tokyo Night.
 `/theme nord` sets one directly. With no theme chosen yet, rook starts
 with the dark or light default matching the terminal background (read
-from `COLORFGBG` where the terminal sets it).
+from `COLORFGBG` where the terminal sets it). On terminals without
+truecolor, theme colors are downsampled to the 256-color cube or the
+basic 16, judged from `COLORTERM` and `TERM`.
 
 ## How it is built
 

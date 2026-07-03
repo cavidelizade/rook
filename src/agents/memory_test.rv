@@ -1,0 +1,44 @@
+import std/string
+import std/test { assert_eq_str, assert_true }
+import std/fs { write, remove_file }
+import "./memory" { memory_from, read_memory, memory_paths }
+
+fun test_no_memory_means_no_section() {
+    let none: List<String> = []
+    assert_eq_str(memory_from(none), "")
+}
+
+fun test_texts_are_joined_in_order() {
+    let p = memory_from(["global notes", "project notes"])
+    assert_true(p.contains("Standing instructions"))
+    assert_true(p.contains("global notes"))
+    assert_true(p.contains("project notes"))
+    assert_true(p.index_of("global notes") < p.index_of("project notes"))
+}
+
+fun test_read_memory_skips_missing_and_blank_files() {
+    write("_rook_mem_a.md", "use spaces not tabs")
+    write("_rook_mem_blank.md", "   \n  ")
+    let texts = read_memory(["_rook_mem_missing.md", "_rook_mem_blank.md", "_rook_mem_a.md"])
+    assert_true(texts.len() == 1)
+    assert_eq_str(texts[0], "use spaces not tabs")
+    remove_file("_rook_mem_a.md")
+    remove_file("_rook_mem_blank.md")
+    return
+}
+
+fun test_oversized_memory_is_truncated() {
+    let big = "x".repeat(9000)
+    write("_rook_mem_big.md", big)
+    let texts = read_memory(["_rook_mem_big.md"])
+    assert_true(texts[0].length() < 8100)
+    assert_true(texts[0].ends_with("[truncated]"))
+    remove_file("_rook_mem_big.md")
+    return
+}
+
+fun test_paths_put_the_project_file_last() {
+    let paths = memory_paths()
+    assert_true(paths.len() >= 1)
+    assert_eq_str(paths[paths.len() - 1], "AGENTS.md")
+}

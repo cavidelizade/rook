@@ -1,0 +1,85 @@
+// Memory: the AGENTS.md files carried into every turn's system context,
+// following the cross-tool convention. The project's ./AGENTS.md holds build
+// steps, tests, and conventions; a global one at ~/.agents/AGENTS.md holds
+// the user's own standing notes. Both are included, global first, so the
+// project file can refine what the global one says.
+
+import std/string
+import std/env { get_env, has_env }
+import std/fs { read, exists }
+
+// A single memory file may not crowd out the conversation.
+const MAX_MEMORY_CHARS: Int = 8000
+
+// The memory section of the system prompt, "" when no AGENTS.md exists.
+fun memory_prompt() -> String {
+    return memory_from(read_memory(memory_paths()))
+}
+
+// Where memory lives, least specific first: the global file, then the
+// project's.
+fun memory_paths() -> List<String> {
+    let out: List<String> = []
+    let h = _home()
+    if h != "" {
+        out.push("${h}/.agents/AGENTS.md")
+    }
+    out.push("AGENTS.md")
+    return out
+}
+
+// The contents of every path that exists, in order, each capped.
+fun read_memory(paths: List<String>) -> List<String> {
+    let out: List<String> = []
+    let i = 0
+    while i < paths.len() {
+        if exists(paths[i]) {
+            match read(paths[i]) {
+                Ok(text) -> {
+                    let t = text.trim()
+                    if t != "" {
+                        out.push(_cap(t))
+                    }
+                },
+                Err(e) -> {},
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// Assemble the prompt section from the loaded texts. Pure, so it is easy to
+// test without touching the filesystem.
+fun memory_from(texts: List<String>) -> String {
+    if texts.len() == 0 {
+        return ""
+    }
+    let out = " Standing instructions from AGENTS.md, follow them:"
+    let i = 0
+    while i < texts.len() {
+        out = "${out}\n\n${texts[i]}"
+        i = i + 1
+    }
+    return out
+}
+
+fun _cap(t: String) -> String {
+    if t.length() <= MAX_MEMORY_CHARS {
+        return t
+    }
+    return "${t.substring(0, MAX_MEMORY_CHARS)}\n[truncated]"
+}
+
+fun _home() -> String {
+    if has_env("HOME") {
+        let h = get_env("HOME")
+        if h != "" {
+            return h
+        }
+    }
+    if has_env("USERPROFILE") {
+        return get_env("USERPROFILE")
+    }
+    return ""
+}

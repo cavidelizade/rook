@@ -91,7 +91,7 @@ from `COLORFGBG` where the terminal sets it). On terminals without
 truecolor, theme colors are downsampled to the 256-color cube or the
 basic 16, judged from `COLORTERM` and `TERM`.
 
-## Skills
+## Skills and memory
 
 rook reads the cross-agent `.agents` layout: a project `./.agents` and a
 global `~/.agents`, with project entries winning. A skill is a folder
@@ -101,6 +101,12 @@ model sees an index of skill names and descriptions in its system
 prompt, and pulls in a skill's full instructions with the `use_skill`
 tool when one matches the task (shown in the transcript like any other
 tool call).
+
+An `AGENTS.md` in the working directory (the cross-tool memory file:
+build steps, tests, conventions) is loaded into the system context on
+every turn, along with a global `~/.agents/AGENTS.md` for your own
+standing notes. The global file comes first so the project one can
+refine it.
 
 ## How it is built
 

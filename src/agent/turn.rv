@@ -169,7 +169,6 @@ fun _dispatch(
         }
         return "error: no subagent named '${name}'; available: ${names}"
     }
-    st.emit(DisplayEvent.Info("${agents[idx].name} agent working…"))
     return run_subagent(st, agents[idx], task, model, api_key, base_url)
 }
 

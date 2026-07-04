@@ -8,6 +8,7 @@ import "github.com/martian56/plumage" { Event, Step, next, quit }
 import "github.com/martian56/plumage/widgets/input" { TextInput }
 import "./model" { Chat, set_model }
 import "../agent/state" { DisplayEvent, Snapshot }
+import "../ui/transcript" { AgentBlock }
 import "../agent/turn" { run_turn }
 import "../ui/spinner" { thinking_word }
 import "../ui/transcript" { Entry }
@@ -55,7 +56,7 @@ fun _tick(m: Chat) -> Step<Chat> {
     if m.active {
         m.elapsed = m.elapsed + 1
         let snap = m.agent.drain()
-        _apply(m, snap.events)
+        apply_events(m, snap.events)
         m.pending = snap.pending
         if snap.done {
             m.active = false
@@ -68,8 +69,11 @@ fun _tick(m: Chat) -> Step<Chat> {
     return next(m)
 }
 
-// Replay one batch of display events into the transcript.
-fun _apply(m: Chat, events: List<DisplayEvent>) {
+// Replay one batch of display events into the transcript. Subagent events
+// build nested blocks: a header when one starts, its tool rows inserted
+// under that header (so parallel agents keep their own groups), and a
+// collapse to just the header line when it finishes.
+fun apply_events(m: Chat, events: List<DisplayEvent>) {
     let i = 0
     while i < events.len() {
         match events[i] {
@@ -91,9 +95,110 @@ fun _apply(m: Chat, events: List<DisplayEvent>) {
             Info(t) -> {
                 m.entries.push(Entry.Notice(t))
             },
+            AgentStarted(name) -> {
+                m.entries.push(Entry.AgentHeader(name, "working…"))
+                m.open_agents.push(AgentBlock { name, header: m.entries.len() - 1, tools: 0 })
+                m.cur_bubble = 0 - 1
+            },
+            AgentTool(agent, name, result) -> {
+                let b = _find_block(m, agent)
+                if b < 0 {
+                    m.entries.push(Entry.AgentTool(agent, name, result))
+                } else {
+                    let at = m.open_agents[b].header + 1 + m.open_agents[b].tools
+                    _insert_entry(m, at, Entry.AgentTool(agent, name, result))
+                    m.open_agents[b].tools = m.open_agents[b].tools + 1
+                    _shift_blocks(m, at, 1, b)
+                }
+            },
+            AgentFinished(name, used) -> {
+                let b = _find_block(m, name)
+                if b >= 0 {
+                    let head = m.open_agents[b].header
+                    let count = m.open_agents[b].tools
+                    _remove_entries(m, head + 1, count)
+                    let word = "tools"
+                    if used == 1 {
+                        word = "tool"
+                    }
+                    m.entries[head] = Entry.AgentHeader(name, "done · ${used} ${word}")
+                    _shift_blocks(m, head + 1, 0 - count, b)
+                    _drop_block(m, b)
+                }
+            },
         }
         i = i + 1
     }
+    return
+}
+
+// The open block for an agent, or -1.
+fun _find_block(m: Chat, name: String) -> Int {
+    let i = 0
+    while i < m.open_agents.len() {
+        if m.open_agents[i].name == name {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+// Insert an entry at `at`, shifting the rest down.
+fun _insert_entry(m: Chat, at: Int, e: Entry) {
+    let out: List<Entry> = []
+    let i = 0
+    while i < m.entries.len() {
+        if i == at {
+            out.push(e)
+        }
+        out.push(m.entries[i])
+        i = i + 1
+    }
+    if at >= m.entries.len() {
+        out.push(e)
+    }
+    m.entries = out
+    return
+}
+
+// Remove `count` entries starting at `from`.
+fun _remove_entries(m: Chat, from: Int, count: Int) {
+    let out: List<Entry> = []
+    let i = 0
+    while i < m.entries.len() {
+        if i < from || i >= from + count {
+            out.push(m.entries[i])
+        }
+        i = i + 1
+    }
+    m.entries = out
+    return
+}
+
+// After inserting (or removing) rows at `at`, move every other block whose
+// header sits at or past it.
+fun _shift_blocks(m: Chat, at: Int, by: Int, except: Int) {
+    let i = 0
+    while i < m.open_agents.len() {
+        if i != except && m.open_agents[i].header >= at {
+            m.open_agents[i].header = m.open_agents[i].header + by
+        }
+        i = i + 1
+    }
+    return
+}
+
+fun _drop_block(m: Chat, idx: Int) {
+    let out: List<AgentBlock> = []
+    let i = 0
+    while i < m.open_agents.len() {
+        if i != idx {
+            out.push(m.open_agents[i])
+        }
+        i = i + 1
+    }
+    m.open_agents = out
     return
 }
 
@@ -418,6 +523,8 @@ fun _run(m: Chat, text: String) -> Step<Chat> {
         Clear -> {
             let e: List<Entry> = []
             m.entries = e
+            let blocks: List<AgentBlock> = []
+            m.open_agents = blocks
             m.agent.clear_convo()
             return next(m)
         },

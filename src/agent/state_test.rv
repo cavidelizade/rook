@@ -19,6 +19,7 @@ fun replay(events: List<DisplayEvent>) -> String {
             Info(t) -> {
                 out = out.concat("[info ${t}]")
             },
+            _ -> {},
         }
         i = i + 1
     }

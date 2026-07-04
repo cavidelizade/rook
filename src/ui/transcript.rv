@@ -12,6 +12,18 @@ enum Entry {
     BotMsg(String),
     ToolMsg(String, String),
     Notice(String),
+    // A subagent block header: the agent's name and its status line.
+    AgentHeader(String, String),
+    // One tool a subagent ran, nested under its header: agent, label, result.
+    AgentTool(String, String, String),
+}
+
+// Where a running subagent's block sits in the entries, so new tool rows
+// insert under the right header and the block can collapse when it ends.
+struct AgentBlock {
+    name: String,
+    header: Int,
+    tools: Int,
 }
 
 // Lay the conversation out as lines wrapped to w columns, styled by the theme.
@@ -41,11 +53,65 @@ fun build_lines(entries: List<Entry>, w: Int, theme: Theme) -> List<Line> {
             Notice(t) -> {
                 out.push(Line.styled("  ${t}", theme.error))
             },
+            AgentHeader(name, status) -> {
+                out.push(
+                    Line.from_spans(
+                        [
+                            Span.styled("◆ ", theme.assistant),
+                            Span.styled("${name} agent", theme.text.bold()),
+                            Span.styled("  ${status}", theme.dim),
+                        ],
+                    ),
+                )
+            },
+            AgentTool(agent, name, result) -> {
+                out.push(
+                    Line.from_spans([Span.styled("  ● ", theme.tool), Span.styled(name, theme.text.bold())]),
+                )
+                out.push(
+                    Line.from_spans(
+                        [Span.styled("    ⎿  ", theme.result), Span.styled(result, theme.result)],
+                    ),
+                )
+            },
         }
-        out.push(Line.raw(""))
+        // Rows inside an agent block sit tight; everything else gets a blank
+        // separator.
+        if !_binds_to_next(entries, i) {
+            out.push(Line.raw(""))
+        }
         i = i + 1
     }
     return out
+}
+
+// Whether the entry at i should sit flush against the next one: a header
+// above its tools, or a tool row followed by another.
+fun _binds_to_next(entries: List<Entry>, i: Int) -> Bool {
+    if i + 1 >= entries.len() {
+        return false
+    }
+    let here_block = false
+    match entries[i] {
+        AgentHeader(n, s) -> {
+            here_block = true
+        },
+        AgentTool(a, n, r) -> {
+            here_block = true
+        },
+        _ -> {},
+    }
+    if !here_block {
+        return false
+    }
+    let next_tool = false
+    match entries[i + 1] {
+        AgentTool(a, n, r) -> {
+            next_tool = true
+        },
+        _ -> {},
+    }
+    return next_tool
 }
 
 // Wrap t to the body width and push its rows: the first behind the lead

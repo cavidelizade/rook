@@ -129,6 +129,15 @@ fun e2e_replay(events: List<DisplayEvent>) -> String {
             Info(t) -> {
                 out = out.concat("[info ${t}]")
             },
+            AgentStarted(name) -> {
+                out = out.concat("[agent ${name} started]")
+            },
+            AgentTool(agent, name, result) -> {
+                out = out.concat("[${agent} › ${name} => ${result}]")
+            },
+            AgentFinished(name, used) -> {
+                out = out.concat("[agent ${name} done ${used}]")
+            },
         }
         i = i + 1
     }
@@ -213,7 +222,8 @@ fun test_dispatch_runs_a_subagent_and_feeds_its_answer_back() {
     let got = e2e_drain(st)
     // The dispatch ran the subagent, its answer came back as the tool
     // result, and the parent finished with its own reply.
-    assert_true(got.contains("[info echoer agent working…]"))
+    assert_true(got.contains("[agent echoer started]"))
+    assert_true(got.contains("[agent echoer done 0]"))
     assert_true(got.contains("[dispatch(echoer) => echo done]"))
     assert_true(got.contains("The agent said: echo done."))
     // Parent conversation: user, assistant(tool_calls), tool_result,
@@ -247,6 +257,8 @@ fun test_two_dispatches_fan_out_and_both_results_return() {
     })
     let got = e2e_drain(st)
     assert_true(got.contains("[info running 2 agents in parallel…]"))
+    assert_true(got.contains("[agent echoer started]"))
+    assert_true(got.contains("[agent shouter started]"))
     assert_true(got.contains("[dispatch(echoer) => echo done]"))
     assert_true(got.contains("[dispatch(shouter) => SHOUT DONE]"))
     assert_true(got.contains("Both agents reported."))

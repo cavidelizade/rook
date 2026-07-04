@@ -1,0 +1,78 @@
+import std/string
+import std/test { assert_eq_str, assert_true }
+import "./model" { Chat, chat_init }
+import "./update" { apply_events }
+import "../agent/state" { DisplayEvent }
+import "../ui/transcript" { Entry }
+
+fun tag(e: Entry) -> String {
+    return match e {
+        UserMsg(t) -> "u",
+        BotMsg(t) -> "b",
+        ToolMsg(n, r) -> "t:${n}",
+        Notice(t) -> "n",
+        AgentHeader(name, status) -> "h:${name}:${status}",
+        AgentTool(agent, n, r) -> "a:${agent}:${n}",
+    }
+}
+
+fun tags(m: Chat) -> String {
+    let out = ""
+    let i = 0
+    while i < m.entries.len() {
+        out = "${out}|${tag(m.entries[i])}"
+        i = i + 1
+    }
+    return out
+}
+
+fun test_parallel_agent_rows_group_under_their_own_headers() {
+    let m = chat_init()
+    apply_events(
+        m,
+        [
+            DisplayEvent.AgentStarted("explorer"),
+            DisplayEvent.AgentStarted("reviewer"),
+            DisplayEvent.AgentTool("explorer", "grep(x)", "2 hits"),
+            DisplayEvent.AgentTool("reviewer", "read_file(a)", "ok"),
+            DisplayEvent.AgentTool("explorer", "read_file(b)", "ok"),
+        ],
+    )
+    // Interleaved events, but each agent's rows sit under its own header.
+    assert_eq_str(
+        tags(m),
+        "|h:explorer:working…|a:explorer:grep(x)|a:explorer:read_file(b)|h:reviewer:working…|a:reviewer:read_file(a)",
+    )
+}
+
+fun test_finished_agents_collapse_to_their_header() {
+    let m = chat_init()
+    apply_events(
+        m,
+        [
+            DisplayEvent.AgentStarted("explorer"),
+            DisplayEvent.AgentStarted("reviewer"),
+            DisplayEvent.AgentTool("explorer", "grep(x)", "2 hits"),
+            DisplayEvent.AgentTool("reviewer", "read_file(a)", "ok"),
+            DisplayEvent.AgentTool("explorer", "read_file(b)", "ok"),
+            DisplayEvent.AgentFinished("explorer", 2),
+            DisplayEvent.AgentFinished("reviewer", 1),
+        ],
+    )
+    assert_eq_str(tags(m), "|h:explorer:done · 2 tools|h:reviewer:done · 1 tool")
+    assert_true(m.open_agents.len() == 0)
+}
+
+fun test_the_dispatch_row_lands_after_the_collapsed_block() {
+    let m = chat_init()
+    apply_events(
+        m,
+        [
+            DisplayEvent.AgentStarted("explorer"),
+            DisplayEvent.AgentTool("explorer", "grep(x)", "2 hits"),
+            DisplayEvent.AgentFinished("explorer", 1),
+            DisplayEvent.ToolRan("dispatch(explorer)", "found it in src/x.rv"),
+        ],
+    )
+    assert_eq_str(tags(m), "|h:explorer:done · 1 tool|t:dispatch(explorer)")
+}

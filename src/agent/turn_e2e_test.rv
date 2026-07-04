@@ -16,6 +16,7 @@ let write_hits = 0
 let dispatch_hits = 0
 let fanout_hits = 0
 let ask_hits = 0
+let perm_hits = 0
 
 // Round 1: ask to read a file. Round 2: answer.
 fun read_handler(req: Request) -> Response {
@@ -36,6 +37,19 @@ fun write_handler(req: Request) -> Response {
     if write_hits == 1 {
         return Response.text(
             "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"w1\",\"function\":{\"name\":\"write_file\",\"arguments\":\"{\\\"path\\\":\\\"_rook_e2e_out.txt\\\",\\\"content\\\":\\\"written by rook\\\"}\"}}]}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+        )
+    }
+    return Response.text(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Done, wrote the file.\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+    )
+}
+
+// Round 1: ask to write a file an allow rule covers. Round 2: confirm.
+fun perm_handler(req: Request) -> Response {
+    perm_hits = perm_hits + 1
+    if perm_hits == 1 {
+        return Response.text(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"p1\",\"function\":{\"name\":\"write_file\",\"arguments\":\"{\\\"path\\\":\\\"_rook_e2e_perm.txt\\\",\\\"content\\\":\\\"written by rook\\\"}\"}}]}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
         )
     }
     return Response.text(
@@ -68,6 +82,12 @@ fun serve_read() {
     let app = Server.new()
     app.post("/v1/chat/completions", read_handler)
     app.listen("127.0.0.1:8461")
+}
+
+fun serve_perm() {
+    let app = Server.new()
+    app.post("/v1/chat/completions", perm_handler)
+    app.listen("127.0.0.1:8468")
 }
 
 fun serve_dispatch() {
@@ -321,6 +341,33 @@ fun test_ask_user_round_trips_the_pick() {
     assert_true(got.contains("Going the safe way."))
     // user, assistant(tool_calls), tool_result, assistant(final).
     assert_eq_int(st.messages().len(), 4)
+    return
+}
+
+fun test_an_allow_rule_skips_the_approval_prompt() {
+    // The settings allow writes to this path, so the turn completes with
+    // nobody around to answer an approval prompt.
+    create_dir_all(".agents")
+    fs_write(
+        ".agents/settings.json",
+        "{\"permissions\": {\"allow\": [\"write_file(_rook_e2e_perm*)\"]}}",
+    )
+    spawn(fun() -> Unit {
+        serve_perm()
+    })
+    sleep_millis(200)
+    let st = AgentState.new()
+    st.push_user("please write the file")
+    st.begin()
+    spawn(fun() -> Unit {
+        run_turn(st, "custom/local", "", "http://127.0.0.1:8468/v1")
+    })
+    let got = e2e_drain(st)
+    assert_true(got.contains("write_file(_rook_e2e_perm.txt)"))
+    assert_true(got.contains("Done, wrote the file."))
+    remove_file("_rook_e2e_perm.txt")
+    remove_file(".agents/settings.json")
+    remove_dir(".agents")
     return
 }
 

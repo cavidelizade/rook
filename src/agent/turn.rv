@@ -13,6 +13,7 @@ import "./session" { build_request }
 import "./subturn" { run_subagent }
 import "../tools/registry" { tools, needs_approval, dispatch, label }
 import "../tools/preview" { change_preview }
+import "../tools/permissions" { Verdict, check_permission }
 import "../tools/args" { arg }
 import "../agents/dir" { roots }
 import "../agents/subagents" { Subagent, all_subagents, subagent_index }
@@ -224,13 +225,29 @@ fun _ask_user(st: AgentState, call: ToolCall) -> String {
 // Run one tool call, gating a mutating one through approval unless its kind
 // was already allowed for the turn.
 fun _run_one(st: AgentState, call: ToolCall, allowed: List<String>) -> String {
+    // Settings rules come first: a deny blocks any tool, an allow skips the
+    // prompt for a gated one.
+    let denied = ""
+    let pre_allowed = false
+    match check_permission(call) {
+        Deny(rule) -> {
+            denied = rule
+        },
+        Allow -> {
+            pre_allowed = true
+        },
+        Ask -> {},
+    }
+    if denied != "" {
+        return "This action is blocked by the permission rule '${denied}' in settings. Do not retry it; find another way or ask the user."
+    }
     if !needs_approval(call.name) {
         return dispatch(call)
     }
     // The diff this call would make, shown in the approval prompt and, on
     // success, under the tool row.
     let preview = change_preview(call)
-    if _contains(allowed, call.name) {
+    if pre_allowed || _contains(allowed, call.name) {
         return _with_preview(dispatch(call), preview)
     }
     let decision = st.ask_detail(label(call), preview)

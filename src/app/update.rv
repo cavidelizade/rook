@@ -19,6 +19,7 @@ import "../ui/themes" { all_themes, theme_by_name, theme_index }
 import "../ui/depth" { themed }
 import "../agents/dir" { roots }
 import "../agents/commands" { load_commands, find_expansion }
+import "../tools/shells" { list_shells }
 
 fun chat_update(m: Chat, e: Event) -> Step<Chat> {
     match e {
@@ -230,6 +231,9 @@ fun _key(m: Chat, k: Key) -> Step<Chat> {
     if m.help_open {
         return _help_key(m, k)
     }
+    if m.shells_open {
+        return _shells_key(m, k)
+    }
     if m.pending != "" {
         return _approval_key(m, k)
     }
@@ -392,6 +396,32 @@ fun _pick_key(m: Chat, k: Key) -> Step<Chat> {
                 m.pick_sel = 0
             }
         },
+    }
+    return next(m)
+}
+
+// Navigate the /shells panel: arrows move the highlight, esc closes. The
+// list itself refreshes on every frame, so statuses stay live.
+fun _shells_key(m: Chat, k: Key) -> Step<Chat> {
+    match k {
+        Up -> {
+            if m.shells_sel > 0 {
+                m.shells_sel = m.shells_sel - 1
+            }
+        },
+        Down -> {
+            let n = list_shells().len()
+            if m.shells_sel < n - 1 {
+                m.shells_sel = m.shells_sel + 1
+            }
+        },
+        Esc -> {
+            m.shells_open = false
+        },
+        Enter -> {
+            m.shells_open = false
+        },
+        _ -> {},
     }
     return next(m)
 }
@@ -562,6 +592,11 @@ fun _run(m: Chat, text: String) -> Step<Chat> {
                 save_theme(m.theme.name)
                 m.entries.push(Entry.Notice("theme set to ${m.theme.name}"))
             }
+            return next(m)
+        },
+        Shells -> {
+            m.shells_open = true
+            m.shells_sel = 0
             return next(m)
         },
         Login -> {

@@ -96,6 +96,9 @@ you keep typing: arrow keys move the highlight, **Tab** completes the
 name, **Enter** runs the selection, **Esc** dismisses. Custom commands
 from `.agents/commands/` appear right in the menu.
 
+`/shells` opens a panel of the background shells, id, status with
+runtime or exit code, and command, refreshed live while it is open.
+
 `/help` opens the same list as a menu: arrows to browse every command
 (built-in and custom) with its description, Enter to run one, Esc to
 close. The other built-ins: `/clear` (wipe the conversation), `/model`,

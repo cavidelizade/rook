@@ -16,6 +16,7 @@ fun builtin_commands() -> List<CmdInfo> {
         CmdInfo { name: "help", desc: "show every command" },
         CmdInfo { name: "model", desc: "switch model; /model <provider/model> sets one directly" },
         CmdInfo { name: "theme", desc: "switch the color theme" },
+        CmdInfo { name: "shells", desc: "list background shells" },
         CmdInfo { name: "key", desc: "set the current provider's API key" },
         CmdInfo { name: "clear", desc: "wipe the conversation" },
         CmdInfo { name: "quit", desc: "exit rook" },
@@ -80,6 +81,7 @@ enum Command {
     ModelSet(String),
     ThemePicker,
     ThemeSet(String),
+    Shells,
     Login,
     Unknown(String),
 }
@@ -109,6 +111,9 @@ fun parse_command(text: String) -> Command {
             return Command.ModelPicker
         }
         return Command.ModelSet(arg)
+    }
+    if text == "/shells" {
+        return Command.Shells
     }
     if text == "/theme" {
         return Command.ThemePicker

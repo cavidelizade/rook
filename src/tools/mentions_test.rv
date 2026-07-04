@@ -1,0 +1,86 @@
+import std/string
+import std/test { assert_eq_str, assert_eq_int, assert_true }
+import std/fs { write, create_dir_all, remove_file, remove_dir }
+import "./mentions" { Mention, current_mention, fuzzy_match, mentioned_paths, expand_mentions, list_files }
+
+fun test_current_mention_detects_a_trailing_at_token() {
+    let m = current_mention("look at @src/ma")
+    assert_true(m.active)
+    assert_eq_str(m.query, "src/ma")
+    assert_eq_int(m.at, 8)
+}
+
+fun test_current_mention_needs_a_word_boundary_and_no_space() {
+    // Bare @ at the end is an empty active query.
+    assert_true(current_mention("open @").active)
+    // Email-like @ (no boundary) is not a mention.
+    assert_true(!current_mention("me@example").active)
+    // A completed reference (space after) is not active.
+    assert_true(!current_mention("@src/main.rv done").active)
+    // No @ at all.
+    assert_true(!current_mention("plain text").active)
+}
+
+fun test_fuzzy_ranks_basename_then_path_then_subsequence() {
+    let paths = ["src/app/model.rv", "src/tools/mentions.rv", "docs/model-notes.md", "README.md"]
+    let hits = fuzzy_match("model", paths)
+    // Basename substring wins the top spot over the path-only match.
+    assert_eq_str(hits[0], "src/app/model.rv")
+    assert_true(_has(hits, "docs/model-notes.md"))
+    assert_true(!_has(hits, "src/tools/mentions.rv"))
+}
+
+fun test_fuzzy_empty_query_returns_the_head() {
+    let paths = ["a", "b", "c"]
+    assert_eq_int(fuzzy_match("", paths).len(), 3)
+    assert_eq_str(fuzzy_match("  ", paths)[0], "a")
+}
+
+fun test_fuzzy_subsequence_matches_scattered_letters() {
+    let paths = ["src/tools/registry.rv"]
+    assert_true(_has(fuzzy_match("srgy", paths), "src/tools/registry.rv"))
+    assert_true(fuzzy_match("zzz", paths).len() == 0)
+}
+
+fun test_mentioned_paths_and_expansion_attach_real_files() {
+    create_dir_all("_rook_mt")
+    write("_rook_mt/a.txt", "alpha body")
+    write("_rook_mt/b.txt", "beta body")
+    let text = "compare @_rook_mt/a.txt and @_rook_mt/b.txt and @_rook_mt/missing.txt"
+    let paths = mentioned_paths(text)
+    assert_eq_int(paths.len(), 2)
+    let expanded = expand_mentions(text)
+    assert_true(expanded.starts_with(text))
+    assert_true(expanded.contains("--- _rook_mt/a.txt ---"))
+    assert_true(expanded.contains("alpha body"))
+    assert_true(expanded.contains("beta body"))
+    // A message with no valid mention is unchanged.
+    assert_eq_str(expand_mentions("no refs here"), "no refs here")
+    remove_file("_rook_mt/a.txt")
+    remove_file("_rook_mt/b.txt")
+    remove_dir("_rook_mt")
+    return
+}
+
+fun test_list_files_finds_project_sources_and_skips_noise() {
+    let files = list_files()
+    assert_true(_has(files, "src/main.rv"))
+    assert_true(_has(files, "rv.toml"))
+    let i = 0
+    while i < files.len() {
+        assert_true(!files[i].starts_with("target/"))
+        assert_true(!files[i].starts_with(".git/"))
+        i = i + 1
+    }
+}
+
+fun _has(xs: List<String>, x: String) -> Bool {
+    let i = 0
+    while i < xs.len() {
+        if xs[i] == x {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}

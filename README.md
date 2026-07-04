@@ -33,6 +33,10 @@ OpenRouter is the default provider, since one key there reaches most models.
 ## Talking to it
 
 - Type a message and press Enter. The reply streams in.
+- Type `@` to pin a file to the message: a picker fuzzy-matches paths as
+  you type, arrows move, Tab or Enter completes. On send, every
+  `@path` you referenced is read and attached, so the model has those
+  files without a separate read step.
 - The model uses tools as it works. Reading and searching happen
   automatically; a file write, edit, or shell command pauses for your
   approval: **y** to allow, **a** to allow every call of that kind for the

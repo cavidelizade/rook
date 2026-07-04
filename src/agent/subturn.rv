@@ -42,11 +42,14 @@ fun run_subagent(
         prompt = DEFAULT_SUB_PROMPT
     }
 
+    st.emit(DisplayEvent.AgentStarted(agent.name))
+    let used = 0
     let history: List<Message> = [Message.user(task)]
     let allowed: List<String> = []
     let round = 0
     while round < SUB_ROUNDS {
         if st.interrupted() {
+            st.emit(DisplayEvent.AgentFinished(agent.name, used))
             return "error: interrupted"
         }
         let req = _sub_request(use_model, prompt, history, use_key, base_url, agent.tools)
@@ -64,9 +67,11 @@ fun run_subagent(
             },
         }
         if err != "" {
+            st.emit(DisplayEvent.AgentFinished(agent.name, used))
             return "error: ${err}"
         }
         if calls.len() == 0 {
+            st.emit(DisplayEvent.AgentFinished(agent.name, used))
             return reply_text
         }
 
@@ -75,12 +80,14 @@ fun run_subagent(
         while i < calls.len() {
             let call = calls[i]
             let result = _sub_one(st, agent, call, allowed)
-            st.emit(DisplayEvent.ToolRan("${agent.name} › ${label(call)}", _short(result)))
+            st.emit(DisplayEvent.AgentTool(agent.name, label(call), _short(result)))
             history.push(Message.tool_result(call.id, call.name, result))
+            used = used + 1
             i = i + 1
         }
         round = round + 1
     }
+    st.emit(DisplayEvent.AgentFinished(agent.name, used))
     return "error: the ${agent.name} agent stopped after ${SUB_ROUNDS} tool rounds"
 }
 

@@ -15,12 +15,18 @@ import std/string
 import std/sync { Mutex, mutex, Channel, channel_buffered }
 import "github.com/martian56/aviary/message" { Message, ToolCall }
 
-// What the goroutine tells the UI to show, in order.
+// What the goroutine tells the UI to show, in order. The Agent* events
+// bracket a subagent run so the UI can render its activity as a nested
+// block: started, each tool it ran, and finished (with how many tools it
+// used), letting the display group and collapse the block.
 enum DisplayEvent {
     Started,
     Chunk(String),
     ToolRan(String, String),
     Info(String),
+    AgentStarted(String),
+    AgentTool(String, String, String),
+    AgentFinished(String, Int),
 }
 
 // A drained batch plus the turn's status, read under the lock and handed to

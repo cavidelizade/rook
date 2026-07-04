@@ -88,14 +88,22 @@ fun test_subagent_runs_a_tool_round_and_returns_only_the_answer() {
     let i = 0
     while i < snap.events.len() {
         match snap.events[i] {
-            ToolRan(name, result) -> {
-                seen = "${seen}[${name}]"
+            AgentStarted(name) -> {
+                seen = "${seen}[start ${name}]"
+            },
+            AgentTool(agent, name, result) -> {
+                seen = "${seen}[${agent} › ${name}]"
+            },
+            AgentFinished(name, used) -> {
+                seen = "${seen}[done ${name} ${used}]"
             },
             _ -> {},
         }
         i = i + 1
     }
+    assert_true(seen.contains("[start explorer]"))
     assert_true(seen.contains("explorer › read_file(_rook_sub.txt)"))
+    assert_true(seen.contains("[done explorer 1]"))
     remove_file("_rook_sub.txt")
     return
 }
@@ -127,8 +135,8 @@ fun test_allowlist_refuses_an_off_limits_tool() {
     let i = 0
     while i < snap.events.len() {
         match snap.events[i] {
-            ToolRan(name, result) -> {
-                seen = "${seen}[${name} => ${result}]"
+            AgentTool(agent, name, result) -> {
+                seen = "${seen}[${agent} › ${name} => ${result}]"
             },
             _ -> {},
         }

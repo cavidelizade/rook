@@ -4,7 +4,7 @@
 
 import "github.com/martian56/plumage/widgets/input" { TextInput }
 import "../agent/state" { AgentState }
-import "../ui/transcript" { Entry }
+import "../ui/transcript" { Entry, AgentBlock }
 import "../ui/theme" { Theme }
 import "../ui/themes" { startup_theme }
 import "../ui/depth" { themed }
@@ -61,11 +61,15 @@ struct Chat {
     // The /help overlay: open, and the highlighted command.
     help_open: Bool,
     help_sel: Int,
+    // Running subagent blocks in the transcript (name, header index, tool
+    // count), so their rows group and collapse.
+    open_agents: List<AgentBlock>,
 }
 
 fun chat_init() -> Chat {
     let model = resolve_model()
     let entries: List<Entry> = []
+    let open_agents: List<AgentBlock> = []
     return Chat {
         entries,
         entry: TextInput.new(),
@@ -97,6 +101,7 @@ fun chat_init() -> Chat {
         slash_dismissed: false,
         help_open: false,
         help_sel: 0,
+        open_agents,
     }
 }
 

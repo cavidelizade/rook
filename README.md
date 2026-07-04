@@ -177,11 +177,15 @@ means every tool), and an optional `model` override, then the agent's
 system prompt as the body. The model sees the roster in its system
 prompt and delegates with the `dispatch` tool; the subagent runs an
 isolated conversation (its own prompt, tools, and rounds) and only its
-final answer returns to the main conversation. Its tool calls show in
-the transcript as `name › tool(...)`, and anything mutating still stops
-for your approval, labeled with the agent's name (parallel agents queue
-for the prompt one at a time). Subagents cannot dispatch further
-agents. A definition named after a built-in replaces it.
+final answer returns to the main conversation. While it works, its
+activity shows as a live nested block in the transcript, a `◆ name
+agent working…` header with the agent's tool calls indented beneath it
+(parallel agents each keep their own block), and when it finishes the
+block collapses to one `done · N tools` line ahead of the result.
+Anything mutating still stops for your approval, labeled with the
+agent's name (parallel agents queue for the prompt one at a time).
+Subagents cannot dispatch further agents. A definition named after a
+built-in replaces it.
 
 When the model dispatches several agents in one step they run in
 parallel, each on its own goroutine with its own conversation, and the

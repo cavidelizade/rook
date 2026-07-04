@@ -8,6 +8,7 @@
 import std/string
 import std/fs { read, is_file }
 import "./dir" { merged_names, path_of }
+import "./front" { Front, parse_front, front_get }
 import "../commands" { CmdInfo }
 
 struct CustomCommand {
@@ -42,28 +43,8 @@ fun load_commands(rs: List<String>) -> List<CustomCommand> {
 // Parse one command file: frontmatter between "---" lines may set the
 // description; the rest is the template.
 fun parse_command_file(text: String, name: String) -> CustomCommand {
-    let description = ""
-    let template = text
-    let lines = text.lines()
-    if lines.len() > 0 && lines[0].trim() == "---" {
-        let i = 1
-        let closed = 0 - 1
-        while i < lines.len() {
-            if lines[i].trim() == "---" {
-                closed = i
-                break
-            }
-            let d = _value(lines[i], "description")
-            if d != "" {
-                description = d
-            }
-            i = i + 1
-        }
-        if closed >= 0 {
-            template = _join_from(lines, closed + 1)
-        }
-    }
-    return CustomCommand { name, description, template: template.trim() }
+    let fm = parse_front(text)
+    return CustomCommand { name, description: front_get(fm, "description"), template: fm.body }
 }
 
 // Expand typed input like "/release 1.2" against the commands. "" when the
@@ -114,31 +95,6 @@ fun command_infos(cmds: List<CustomCommand>) -> List<CmdInfo> {
             d = "custom command"
         }
         out.push(CmdInfo { name: cmds[i].name, desc: d })
-        i = i + 1
-    }
-    return out
-}
-
-fun _value(line: String, key: String) -> String {
-    let t = line.trim()
-    if !t.starts_with("${key}:") {
-        return ""
-    }
-    let v = t.substring(key.length() + 1, t.length()).trim()
-    if v.length() >= 2 && v.starts_with("\"") && v.ends_with("\"") {
-        v = v.substring(1, v.length() - 1)
-    }
-    return v
-}
-
-fun _join_from(lines: List<String>, start: Int) -> String {
-    let out = ""
-    let i = start
-    while i < lines.len() {
-        if i > start {
-            out = out.concat("\n")
-        }
-        out = out.concat(lines[i])
         i = i + 1
     }
     return out

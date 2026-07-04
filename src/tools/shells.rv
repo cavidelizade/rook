@@ -1,0 +1,73 @@
+// Background shells: commands started without blocking the turn, the way
+// rook runs the apps it builds. run_background hands the command to the
+// platform shell via std/process.start and returns a shell id immediately;
+// the child's output accumulates in the runtime and is drained on demand.
+// The store here is the single shared record of every background shell,
+// guarded by a mutex since tool calls run on the turn goroutine while the
+// UI reads from the main loop.
+
+import std/string
+import std/sync { Mutex, mutex }
+import std/env { os_name }
+import std/process { Child, start }
+
+// One background shell. `code` is the exit code once observed, and `done`
+// says whether `code` is meaningful (-1 alone could be a signal death).
+struct BgShell {
+    id: Int,
+    command: String,
+    child: Child,
+    done: Bool,
+    code: Int,
+}
+
+struct ShellStore {
+    lock: Mutex,
+    shells: List<BgShell>,
+    next: Int,
+}
+
+fun _new_store() -> ShellStore {
+    let shells: List<BgShell> = []
+    return ShellStore { lock: mutex(), shells, next: 1 }
+}
+
+let STORE: ShellStore = _new_store()
+
+// Start `command` through the platform shell without waiting. Returns a
+// line naming the new shell id, or an error string.
+fun run_background(command: String) -> String {
+    if command.trim() == "" {
+        return "error: no command given"
+    }
+    let shell = "sh"
+    let flag = "-c"
+    if os_name() == "windows" {
+        shell = "cmd"
+        flag = "/c"
+    }
+    return match start(shell, [flag, command]) {
+        Ok(child) -> {
+            let id = _add(command, child)
+            "started shell ${id}: ${command}"
+        },
+        Err(e) -> "error: ${e.message}",
+    }
+}
+
+// How many background shells the store holds.
+fun shell_count() -> Int {
+    STORE.lock.lock()
+    let n = STORE.shells.len()
+    STORE.lock.unlock()
+    return n
+}
+
+fun _add(command: String, child: Child) -> Int {
+    STORE.lock.lock()
+    let id = STORE.next
+    STORE.next = STORE.next + 1
+    STORE.shells.push(BgShell { id, command, child, done: false, code: 0 })
+    STORE.lock.unlock()
+    return id
+}

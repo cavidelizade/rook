@@ -1,0 +1,94 @@
+// Subagent definitions: one <name>.md per agent under .agents/subagents/,
+// in the shape other coding agents read. The frontmatter names the agent
+// and scopes it (a one-line description, an optional comma-separated tools
+// allowlist, an optional model override); the markdown body is the
+// subagent's system prompt. This module is only the registry; running one
+// is the subagent runtime's job.
+
+import std/string
+import std/fs { read, is_file }
+import "./dir" { merged_names, path_of }
+import "./front" { Front, parse_front, front_get }
+
+struct Subagent {
+    name: String,
+    description: String,
+    // Tool names this agent may call; empty means every tool.
+    tools: List<String>,
+    // A "provider/model" override; "" means the session's model.
+    model: String,
+    // The agent's system prompt.
+    prompt: String,
+}
+
+// Load every definition under the roots' subagents/ folders, project
+// shadowing global by file name. Only .md files count; the file stem is the
+// fallback name.
+fun load_subagents(rs: List<String>) -> List<Subagent> {
+    let out: List<Subagent> = []
+    let names = merged_names(rs, "subagents")
+    let i = 0
+    while i < names.len() {
+        if names[i].ends_with(".md") {
+            let p = path_of(rs, "subagents", names[i])
+            if p != "" && is_file(p) {
+                match read(p) {
+                    Ok(text) -> {
+                        out.push(parse_subagent(text, names[i].substring(0, names[i].length() - 3)))
+                    },
+                    Err(e) -> {},
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// Parse one definition file.
+fun parse_subagent(text: String, fallback_name: String) -> Subagent {
+    let fm = parse_front(text)
+    let name = front_get(fm, "name")
+    if name == "" {
+        name = fallback_name
+    }
+    return Subagent {
+        name,
+        description: front_get(fm, "description"),
+        tools: split_tools(front_get(fm, "tools")),
+        model: front_get(fm, "model"),
+        prompt: fm.body,
+    }
+}
+
+// A comma-separated tools value into clean names; "" means no restriction
+// and comes back empty.
+fun split_tools(v: String) -> List<String> {
+    let out: List<String> = []
+    if v.trim() == "" {
+        return out
+    }
+    let parts = v.split(",")
+    let i = 0
+    while i < parts.len() {
+        let t = parts[i].trim()
+        if t != "" {
+            out.push(t)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// The position of `name` in the registry, ignoring case; -1 when unknown.
+fun subagent_index(agents: List<Subagent>, name: String) -> Int {
+    let want = name.to_lower()
+    let i = 0
+    while i < agents.len() {
+        if agents[i].name.to_lower() == want {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}

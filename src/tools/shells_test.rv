@@ -1,7 +1,8 @@
 import std/string
 import std/test { assert_true, assert_eq_int, assert_eq_str }
 import std/time { sleep_millis }
-import "./shells" { ShellInfo, run_background, shell_count, list_shells }
+import std/env { os_name }
+import "./shells" { ShellInfo, run_background, shell_count, list_shells, read_shell, shells_list_text, kill_shell }
 
 fun test_background_command_returns_an_id_immediately() {
     let before = shell_count()
@@ -41,6 +42,57 @@ fun _id_of(started: String) -> Int {
         Some(n) -> n,
         None -> 0 - 1,
     }
+}
+
+fun test_read_shell_is_incremental() {
+    let id = _id_of(run_background("echo incremental-probe"))
+    assert_true(id > 0)
+    // Wait for the output to land, then read it.
+    let tries = 0
+    let got = ""
+    while tries < 400 && !got.contains("incremental-probe") {
+        got = read_shell("${id}")
+        sleep_millis(10)
+        tries = tries + 1
+    }
+    assert_true(got.contains("shell ${id}"))
+    assert_true(got.contains("incremental-probe"))
+    // Nothing new arrives after exit; the second read says so.
+    let again = read_shell("${id}")
+    assert_true(again.contains("(no new output)"))
+}
+
+fun test_read_shell_rejects_bad_ids() {
+    assert_true(read_shell("not-a-number").starts_with("error:"))
+    assert_true(read_shell("99999").starts_with("error:"))
+}
+
+fun test_list_text_names_every_shell() {
+    run_background("echo list-probe")
+    let text = shells_list_text()
+    assert_true(text.contains("echo list-probe"))
+    assert_true(text.contains("shell "))
+}
+
+fun test_kill_stops_a_running_shell() {
+    let cmd = "sleep 30"
+    if os_name() == "windows" {
+        cmd = "ping -n 31 127.0.0.1"
+    }
+    let id = _id_of(run_background(cmd))
+    assert_true(id > 0)
+    let r = kill_shell("${id}")
+    assert_true(r.starts_with("killed shell ${id}"))
+    // The registry shows it exited, and killing again reports that.
+    let infos = list_shells()
+    let at = _index_of(infos, id)
+    assert_true(at >= 0)
+    assert_true(!infos[at].running)
+    assert_true(kill_shell("${id}").contains("already exited"))
+}
+
+fun test_kill_rejects_unknown_shells() {
+    assert_true(kill_shell("99999").starts_with("error:"))
 }
 
 fun test_registry_moves_a_shell_from_running_to_exited() {

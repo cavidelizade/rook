@@ -79,8 +79,11 @@ The model can call:
 
 `run_background` starts a long-running command (a dev server, a
 watcher, an app rook just built) and returns a shell id immediately
-instead of blocking; the output collects in the background. Tools to
-read, list, and kill background shells are on the way.
+instead of blocking; the output collects in the background. The model
+follows up with `read_shell` (what a shell printed since its last
+look), `list_shells` (status, runtime, and command of each), and
+`kill_shell` (stop one; this asks for approval). So rook can start the
+app it just built, watch the log, and react to what it sees.
 
 `run_command` runs through the platform shell in the working directory and
 returns stdout, stderr, and the exit code. Tool output is truncated so a

@@ -9,7 +9,7 @@ import "./args" { arg }
 import "./files" { read_file, list_dir, write_file, edit_file }
 import "./search" { grep }
 import "./shell" { run_command }
-import "./shells" { run_background }
+import "./shells" { run_background, read_shell, shells_list_text, kill_shell }
 import "../agents/dir" { roots }
 import "../agents/skills" { skill_body }
 
@@ -21,6 +21,7 @@ struct Prop {
 
 // The tool definitions offered to the model.
 fun tools() -> List<ToolDef> {
+    let no_props: List<Prop> = []
     return [
         ToolDef.new(
             "read_file",
@@ -76,6 +77,21 @@ fun tools() -> List<ToolDef> {
             _schema([Prop { name: "command", desc: "the shell command to start" }]),
         ),
         ToolDef.new(
+            "read_shell",
+            "Read a background shell's output since the last read, with its status. Call it again later for what arrived in between.",
+            _schema([Prop { name: "id", desc: "the shell id from run_background" }]),
+        ),
+        ToolDef.new(
+            "list_shells",
+            "List the background shells with their status, runtime, and command.",
+            _schema(no_props),
+        ),
+        ToolDef.new(
+            "kill_shell",
+            "Stop a running background shell and report its exit code.",
+            _schema([Prop { name: "id", desc: "the shell id to stop" }]),
+        ),
+        ToolDef.new(
             "use_skill",
             "Load the full instructions of a skill listed in the system prompt. Call it when a skill matches the task, before doing that work.",
             _schema([Prop { name: "name", desc: "the skill's name, as listed" }]),
@@ -95,7 +111,7 @@ fun tools() -> List<ToolDef> {
 
 // Whether a tool changes the repo or the machine and so must be approved.
 fun needs_approval(name: String) -> Bool {
-    return name == "write_file" || name == "edit_file" || name == "run_command" || name == "run_background"
+    return name == "write_file" || name == "edit_file" || name == "run_command" || name == "run_background" || name == "kill_shell"
 }
 
 // Run a tool call and return its result string.
@@ -121,6 +137,15 @@ fun dispatch(call: ToolCall) -> String {
     }
     if call.name == "run_background" {
         return run_background(arg(a, "command"))
+    }
+    if call.name == "read_shell" {
+        return read_shell(arg(a, "id"))
+    }
+    if call.name == "list_shells" {
+        return shells_list_text()
+    }
+    if call.name == "kill_shell" {
+        return kill_shell(arg(a, "id"))
     }
     if call.name == "use_skill" {
         return skill_body(roots(), arg(a, "name"))
@@ -151,6 +176,12 @@ fun label(call: ToolCall) -> String {
     }
     if call.name == "run_background" {
         return "run_background(${arg(a, "command")})"
+    }
+    if call.name == "read_shell" {
+        return "read_shell(${arg(a, "id")})"
+    }
+    if call.name == "kill_shell" {
+        return "kill_shell(${arg(a, "id")})"
     }
     if call.name == "use_skill" {
         return "use_skill(${arg(a, "name")})"

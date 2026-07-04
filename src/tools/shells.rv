@@ -128,6 +128,116 @@ fun list_shells() -> List<ShellInfo> {
     return out
 }
 
+// The read tool: whatever shell `id` wrote since the last read, behind a
+// status header. Reading advances the shell's read position; a quiet shell
+// answers "(no new output)".
+fun read_shell(id_text: String) -> String {
+    let id = _parse_id(id_text)
+    if id < 0 {
+        return "error: read_shell needs a shell id number"
+    }
+    refresh()
+    STORE.lock.lock()
+    let at = _index_of(id)
+    if at < 0 {
+        STORE.lock.unlock()
+        return "error: no shell ${id}; list_shells shows what exists"
+    }
+    let s = STORE.shells[at]
+    let fresh = s.output.substring(s.read_pos, s.output.length())
+    s.read_pos = s.output.length()
+    let head = _status_line(s)
+    STORE.lock.unlock()
+    if fresh == "" {
+        return "${head}\n(no new output)"
+    }
+    if fresh.length() > MAX_READ {
+        fresh = "… (${fresh.length() - MAX_READ} bytes skipped)\n${fresh.substring(fresh.length() - MAX_READ, fresh.length())}"
+    }
+    return "${head}\n${fresh}"
+}
+
+// The list tool: one status line per shell.
+fun shells_list_text() -> String {
+    let infos = list_shells()
+    if infos.len() == 0 {
+        return "(no background shells)"
+    }
+    let out = ""
+    let i = 0
+    while i < infos.len() {
+        let s = infos[i]
+        let state = "exited ${s.code}"
+        if s.running {
+            state = "running ${s.runtime_ms / 1000}s"
+        }
+        if i > 0 {
+            out = out.concat("\n")
+        }
+        out = out.concat("shell ${s.id} (${state}): ${s.command}")
+        i = i + 1
+    }
+    return out
+}
+
+// The kill tool: stop a running shell and report its exit. Waits for the
+// exit so the registry entry is final when the result comes back.
+fun kill_shell(id_text: String) -> String {
+    let id = _parse_id(id_text)
+    if id < 0 {
+        return "error: kill_shell needs a shell id number"
+    }
+    refresh()
+    STORE.lock.lock()
+    let at = _index_of(id)
+    if at < 0 {
+        STORE.lock.unlock()
+        return "error: no shell ${id}; list_shells shows what exists"
+    }
+    let s = STORE.shells[at]
+    if s.done {
+        let msg = "shell ${id} had already exited with code ${s.code}"
+        STORE.lock.unlock()
+        return msg
+    }
+    s.child.kill()
+    let code = s.child.wait()
+    s.output = s.output.concat(s.child.read_stdout()).concat(s.child.read_stderr())
+    s.child.free()
+    s.done = true
+    s.code = code
+    STORE.lock.unlock()
+    return "killed shell ${id} (exit ${code})"
+}
+
+// Keep a read from burying the transcript; the newest output wins.
+const MAX_READ: Int = 4000
+
+fun _status_line(s: BgShell) -> String {
+    if s.done {
+        return "shell ${s.id} (exited ${s.code}): ${s.command}"
+    }
+    return "shell ${s.id} (running): ${s.command}"
+}
+
+fun _index_of(id: Int) -> Int {
+    let i = 0
+    while i < STORE.shells.len() {
+        if STORE.shells[i].id == id {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+fun _parse_id(text: String) -> Int {
+    return match text.trim().parse_int() {
+        Some(n) -> n,
+        None -> 0 - 1,
+    }
+}
+
 // How many background shells the store holds.
 fun shell_count() -> Int {
     STORE.lock.lock()

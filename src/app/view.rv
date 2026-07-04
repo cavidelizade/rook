@@ -17,7 +17,7 @@ import "../ui/spinner" { pulse }
 import "../config/config" { provider_of, key_env }
 import "../config/catalog" { catalog, filter_catalog }
 import "../commands" { CmdInfo, menu_matches }
-import "../tools/shells" { ShellInfo, list_shells }
+import "../tools/shells" { ShellInfo, list_shells, shell_tail }
 
 fun chat_view(m: Chat, f: Frame) {
     let rows = split_v(
@@ -53,7 +53,11 @@ fun chat_view(m: Chat, f: Frame) {
         _help_menu(m, f)
     }
     if m.shells_open {
-        _shells_panel(m, f)
+        if m.shells_focus > 0 {
+            _shell_pane(m, f)
+        } else {
+            _shells_panel(m, f)
+        }
     }
     if m.entering_key {
         _key_modal(m, f)
@@ -132,6 +136,71 @@ fun _slash_menu(m: Chat, input_area: Rect, f: Frame) {
     return
 }
 
+// A focused shell's output, tailed live: the pane re-reads the newest
+// output on every frame while a dev server or build keeps writing. Esc
+// steps back to the list.
+fun _shell_pane(m: Chat, f: Frame) {
+    let full = f.area()
+    let w = full.w - 4
+    if w > 100 {
+        w = 100
+    }
+    let h = full.h - 4
+    if h < 5 {
+        h = full.h
+    }
+    let x = full.x + (full.w - w) / 2
+    let y = full.y + (full.h - h) / 2
+    let area = Rect.new(x, y, w, h)
+    f.buf.fill(area, " ", m.theme.dim)
+
+    // The shell's current status for the title.
+    let infos = list_shells()
+    let title = "shell ${m.shells_focus}  (esc)"
+    let i = 0
+    while i < infos.len() {
+        if infos[i].id == m.shells_focus {
+            let state = "exit ${infos[i].code}"
+            if infos[i].running {
+                state = "running ${infos[i].runtime_ms / 1000}s"
+            }
+            title = "shell ${m.shells_focus} · ${state} · ${infos[i].command}  (esc)"
+        }
+        i = i + 1
+    }
+    if title.length() > w - 4 {
+        title = "${title.substring(0, w - 5)}…"
+    }
+    let box = Block.new().rounded().title(title).style(m.theme.modal).title_style(
+        m.theme.modal.bold(),
+    )
+    box.render(area, f.buf)
+    let inner = box.inner(area)
+
+    // The newest output that fits: take a generous tail, split to lines,
+    // and show the last rows.
+    let text = shell_tail(m.shells_focus, inner.h * inner.w + 4000)
+    if text == "" {
+        f.buf.set_string(inner.x + 1, inner.y, "(no output yet)", m.theme.dim)
+        return
+    }
+    let lines = text.lines()
+    let top = lines.len() - inner.h
+    if top < 0 {
+        top = 0
+    }
+    let r = 0
+    while r < inner.h && top + r < lines.len() {
+        let line = lines[top + r]
+        if line.length() > inner.w - 2 {
+            line = line.substring(0, inner.w - 2)
+        }
+        f.buf.set_string(inner.x + 1, inner.y + r, line, m.theme.text)
+        r = r + 1
+    }
+    return
+}
+
 // The /shells panel: every background shell with its status, runtime, and
 // command, refreshed each frame so a shell that exits flips live. Arrows
 // move the highlight; esc closes.
@@ -157,9 +226,9 @@ fun _shells_panel(m: Chat, f: Frame) {
     }
     let area = Rect.new(x, y, w, h)
     f.buf.fill(area, " ", m.theme.dim)
-    let box = Block.new().rounded().title("Background shells  (esc)").style(m.theme.modal).title_style(
-        m.theme.modal.bold(),
-    )
+    let box = Block.new().rounded().title("Background shells  (enter to tail, esc)").style(
+        m.theme.modal,
+    ).title_style(m.theme.modal.bold())
     box.render(area, f.buf)
     let inner = box.inner(area)
     if infos.len() == 0 {

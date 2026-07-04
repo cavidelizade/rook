@@ -238,6 +238,26 @@ fun _parse_id(text: String) -> Int {
     }
 }
 
+// The last `max_chars` of shell `id`'s output, for the live pane. Unlike
+// read_shell this does not advance the agent's read position: the pane is
+// the user's view and the tool marker belongs to the model. "" for an
+// unknown id.
+fun shell_tail(id: Int, max_chars: Int) -> String {
+    refresh()
+    STORE.lock.lock()
+    let at = _index_of(id)
+    if at < 0 {
+        STORE.lock.unlock()
+        return ""
+    }
+    let out = STORE.shells[at].output
+    if out.length() > max_chars {
+        out = out.substring(out.length() - max_chars, out.length())
+    }
+    STORE.lock.unlock()
+    return out
+}
+
 // How many background shells the store holds.
 fun shell_count() -> Int {
     STORE.lock.lock()

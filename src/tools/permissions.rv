@@ -1,0 +1,156 @@
+// Permission rules: the "permissions" section of .agents/settings.json
+// pre-approves or blocks tool calls before the approval prompt is even
+// considered.
+//
+//   { "permissions": {
+//       "allow": ["run_command(rvpm *)", "read_shell"],
+//       "deny":  ["run_command(rm *)", "write_file(.github/*)"] } }
+//
+// A rule is a tool name, optionally with a glob in parentheses matched
+// against the call's subject (the command for shell tools, the path for
+// file tools). Deny beats allow; a call neither denies nor allows falls
+// through to the normal approval flow. Rules from the project .agents and
+// the global one both apply.
+
+import std/string
+import std/json { JsonValue }
+import "github.com/martian56/aviary/message" { ToolCall }
+import "github.com/martian56/aviary/jsonutil" { field, as_str, as_list }
+import "./args" { arg }
+import "../agents/dir" { roots }
+import "../agents/settings" { setting_section }
+
+// What the rules say about one call. Deny carries the rule that fired so
+// the refusal can name it.
+enum Verdict {
+    Allow,
+    Deny(String),
+    Ask,
+}
+
+// The verdict for a call under the configured rules.
+fun check_permission(call: ToolCall) -> Verdict {
+    let allow: List<String> = []
+    let deny: List<String> = []
+    let rs = roots()
+    let i = 0
+    while i < rs.len() {
+        match setting_section(rs[i], "permissions") {
+            Some(section) -> {
+                _collect(field(section, "deny"), deny)
+                _collect(field(section, "allow"), allow)
+            },
+            None -> {},
+        }
+        i = i + 1
+    }
+    return verdict(allow, deny, call.name, subject_of(call))
+}
+
+// The pure decision: deny rules first, then allow, else ask.
+fun verdict(allow: List<String>, deny: List<String>, tool: String, subject: String) -> Verdict {
+    let i = 0
+    while i < deny.len() {
+        if rule_matches(deny[i], tool, subject) {
+            return Verdict.Deny(deny[i])
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < allow.len() {
+        if rule_matches(allow[i], tool, subject) {
+            return Verdict.Allow
+        }
+        i = i + 1
+    }
+    return Verdict.Ask
+}
+
+// Whether one rule covers a call. "tool" alone covers every call of that
+// tool; "tool(glob)" also matches the glob against the subject.
+fun rule_matches(rule: String, tool: String, subject: String) -> Bool {
+    let r = rule.trim()
+    let open = r.index_of("(")
+    if open < 0 {
+        return r == tool
+    }
+    if !r.ends_with(")") {
+        return false
+    }
+    if r.substring(0, open) != tool {
+        return false
+    }
+    let pattern = r.substring(open + 1, r.length() - 1)
+    return glob_match(pattern, subject)
+}
+
+// A minimal glob: "*" matches any run of characters, everything else is
+// literal. Anchored at both ends.
+fun glob_match(pattern: String, text: String) -> Bool {
+    let parts = pattern.split("*")
+    // No wildcard: exact match.
+    if parts.len() == 1 {
+        return pattern == text
+    }
+    let pos = 0
+    let i = 0
+    while i < parts.len() {
+        let piece = parts[i]
+        if piece != "" {
+            if i == 0 {
+                if !text.starts_with(piece) {
+                    return false
+                }
+                pos = piece.length()
+            } else {
+                let rest = text.substring(pos, text.length())
+                let at = rest.index_of(piece)
+                if at < 0 {
+                    return false
+                }
+                pos = pos + at + piece.length()
+            }
+        }
+        i = i + 1
+    }
+    // A literal tail must reach the end of the text.
+    if parts[parts.len() - 1] != "" {
+        return pos == text.length()
+    }
+    return true
+}
+
+// The argument a rule's glob runs against, per tool.
+fun subject_of(call: ToolCall) -> String {
+    let a = call.arguments
+    let n = call.name
+    if n == "run_command" || n == "run_background" {
+        return arg(a, "command")
+    }
+    if n == "read_file" || n == "list_dir" || n == "write_file" || n == "edit_file" || n == "file_tree" {
+        return arg(a, "path")
+    }
+    if n == "grep" {
+        return arg(a, "path")
+    }
+    if n == "read_shell" || n == "kill_shell" {
+        return arg(a, "id")
+    }
+    if n == "use_skill" {
+        return arg(a, "name")
+    }
+    return ""
+}
+
+fun _collect(j: JsonValue, out: List<String>) {
+    let items = as_list(j)
+    let i = 0
+    while i < items.len() {
+        let s = as_str(items[i])
+        if s != "" {
+            out.push(s)
+        }
+        i = i + 1
+    }
+    return
+}

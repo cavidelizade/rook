@@ -180,9 +180,26 @@ refine it.
 ```
 
 The string fields join the resolution chain (a root's `rook.json` wins
-over the same root's settings, and project beats global). The object
-sections are reserved for the permission rules, tool config, and MCP
-servers that will read them.
+over the same root's settings, and project beats global). The `tools`
+and `mcp` sections are reserved for the features that will read them.
+
+`permissions` is live: allow rules skip the approval prompt for calls
+you always trust, deny rules block calls outright (for any tool, even
+read-only ones), and deny beats allow. A rule is a tool name, or a tool
+name with a glob matched against the call's command or path:
+
+```json
+{
+  "permissions": {
+    "allow": ["run_command(rvpm *)", "read_shell"],
+    "deny": ["run_command(rm *)", "read_file(*secrets*)"]
+  }
+}
+```
+
+Rules from the project and global `.agents` both apply, and they bind
+subagents the same way. Anything not covered falls through to the
+normal approval prompt.
 
 Custom slash commands live in `.agents/commands/<name>.md`: optional
 frontmatter with a `description` (shown by `/help`), then a prompt

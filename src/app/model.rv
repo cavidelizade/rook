@@ -78,6 +78,11 @@ struct Chat {
     shells_focus: Int,
     // Plan mode: the model researches and proposes, mutating tools blocked.
     plan_mode: Bool,
+    // The @-file picker: the current path matches, the highlighted row, and
+    // whether esc dismissed it until the input changes.
+    mention_matches: List<String>,
+    mention_sel: Int,
+    mention_dismissed: Bool,
 }
 
 fun chat_init() -> Chat {
@@ -85,6 +90,7 @@ fun chat_init() -> Chat {
     let entries: List<Entry> = []
     let open_agents: List<AgentBlock> = []
     let no_choices: List<String> = []
+    let no_matches: List<String> = []
     return Chat {
         entries,
         entry: TextInput.new(),
@@ -125,6 +131,9 @@ fun chat_init() -> Chat {
         shells_sel: 0,
         shells_focus: 0,
         plan_mode: false,
+        mention_matches: no_matches,
+        mention_sel: 0,
+        mention_dismissed: false,
     }
 }
 

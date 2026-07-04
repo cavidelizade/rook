@@ -13,6 +13,7 @@ import "../agent/turn" { run_turn }
 import "../ui/spinner" { thinking_word }
 import "../ui/transcript" { Entry }
 import "../commands" { Command, parse_command, CmdInfo, menu_matches }
+import "../tools/mentions" { Mention, current_mention, fuzzy_match, list_files, expand_mentions }
 import "../config/catalog" { catalog, filter_catalog, index_of }
 import "../config/config" { provider_of, key_needed, save_key, save_theme }
 import "../ui/themes" { all_themes, theme_by_name, theme_index }
@@ -274,6 +275,42 @@ fun _key(m: Chat, k: Key) -> Step<Chat> {
         return next(m)
     }
 
+    // The @-file picker: while a trailing @token is being typed and files
+    // match, the arrows move, tab or enter complete the path, esc dismisses.
+    if !m.mention_dismissed && m.mention_matches.len() > 0 {
+        let mn = current_mention(m.entry.value)
+        if mn.active {
+            if m.mention_sel >= m.mention_matches.len() {
+                m.mention_sel = m.mention_matches.len() - 1
+            }
+            match k {
+                Up -> {
+                    if m.mention_sel > 0 {
+                        m.mention_sel = m.mention_sel - 1
+                    }
+                    return next(m)
+                },
+                Down -> {
+                    if m.mention_sel < m.mention_matches.len() - 1 {
+                        m.mention_sel = m.mention_sel + 1
+                    }
+                    return next(m)
+                },
+                Tab -> {
+                    return _complete_mention(m, mn)
+                },
+                Enter -> {
+                    return _complete_mention(m, mn)
+                },
+                Esc -> {
+                    m.mention_dismissed = true
+                    return next(m)
+                },
+                _ -> {},
+            }
+        }
+    }
+
     // The slash menu: while the input is a bare "/name" prefix, the arrows
     // move the highlight, tab completes it, enter runs it, esc dismisses.
     if !m.slash_dismissed {
@@ -337,7 +374,35 @@ fun _key(m: Chat, k: Key) -> Step<Chat> {
     if m.entry.value != before {
         m.slash_dismissed = false
         m.slash_sel = 0
+        _refresh_mentions(m)
     }
+    return next(m)
+}
+
+// Recompute the @-file matches for the current input. Walks the project, so
+// only called when the input actually changed.
+fun _refresh_mentions(m: Chat) {
+    m.mention_dismissed = false
+    m.mention_sel = 0
+    let mn = current_mention(m.entry.value)
+    if mn.active {
+        m.mention_matches = fuzzy_match(mn.query, list_files())
+    } else {
+        let none: List<String> = []
+        m.mention_matches = none
+    }
+    return
+}
+
+// Complete the live mention with the highlighted path, leaving a trailing
+// space so the picker closes and the next enter sends.
+fun _complete_mention(m: Chat, mn: Mention) -> Step<Chat> {
+    let path = m.mention_matches[m.mention_sel]
+    let head = m.entry.value.substring(0, mn.at)
+    m.entry = TextInput.with_value("${head}@${path} ")
+    let none: List<String> = []
+    m.mention_matches = none
+    m.mention_sel = 0
     return next(m)
 }
 
@@ -698,7 +763,9 @@ fun _run(m: Chat, text: String) -> Step<Chat> {
 }
 
 fun _send(m: Chat, text: String) -> Step<Chat> {
-    return _send_prompt(m, text, text)
+    // The transcript shows what was typed; the model gets any @-referenced
+    // files attached.
+    return _send_prompt(m, text, expand_mentions(text))
 }
 
 // Start a real turn: echo `display`, record `prompt` in the conversation,

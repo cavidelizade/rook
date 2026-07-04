@@ -403,6 +403,20 @@ fun _pick_key(m: Chat, k: Key) -> Step<Chat> {
 // Navigate the /shells panel: arrows move the highlight, esc closes. The
 // list itself refreshes on every frame, so statuses stay live.
 fun _shells_key(m: Chat, k: Key) -> Step<Chat> {
+    // Inside a focused output pane, esc steps back to the list and
+    // everything else is ignored; the pane tails the shell on its own.
+    if m.shells_focus > 0 {
+        match k {
+            Esc -> {
+                m.shells_focus = 0
+            },
+            Enter -> {
+                m.shells_focus = 0
+            },
+            _ -> {},
+        }
+        return next(m)
+    }
     match k {
         Up -> {
             if m.shells_sel > 0 {
@@ -419,7 +433,14 @@ fun _shells_key(m: Chat, k: Key) -> Step<Chat> {
             m.shells_open = false
         },
         Enter -> {
-            m.shells_open = false
+            let infos = list_shells()
+            if infos.len() > 0 {
+                let sel = m.shells_sel
+                if sel >= infos.len() {
+                    sel = infos.len() - 1
+                }
+                m.shells_focus = infos[sel].id
+            }
         },
         _ -> {},
     }

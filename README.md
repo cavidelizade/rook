@@ -98,6 +98,9 @@ from `.agents/commands/` appear right in the menu.
 
 `/shells` opens a panel of the background shells, id, status with
 runtime or exit code, and command, refreshed live while it is open.
+Enter tails the highlighted shell: a full-screen pane follows its
+output as it is produced, so a dev server or build log is readable
+while rook keeps working. Esc steps back.
 
 `/help` opens the same list as a menu: arrows to browse every command
 (built-in and custom) with its description, Enter to run one, Esc to

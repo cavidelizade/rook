@@ -64,9 +64,11 @@ struct Chat {
     // Running subagent blocks in the transcript (name, header index, tool
     // count), so their rows group and collapse.
     open_agents: List<AgentBlock>,
-    // The /shells panel: open, and the highlighted row.
+    // The /shells panel: open, the highlighted row, and the shell id whose
+    // output pane is focused (0 while the list is showing).
     shells_open: Bool,
     shells_sel: Int,
+    shells_focus: Int,
 }
 
 fun chat_init() -> Chat {
@@ -107,6 +109,7 @@ fun chat_init() -> Chat {
         open_agents,
         shells_open: false,
         shells_sel: 0,
+        shells_focus: 0,
     }
 }
 

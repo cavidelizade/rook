@@ -1,0 +1,21 @@
+import std/string
+import std/test { assert_true }
+import "./shells" { run_background, shell_count }
+
+fun test_background_command_returns_an_id_immediately() {
+    let before = shell_count()
+    let r = run_background("echo bg-hello")
+    assert_true(r.starts_with("started shell "))
+    assert_true(r.contains("echo bg-hello"))
+    assert_true(shell_count() == before + 1)
+}
+
+fun test_empty_command_is_an_error() {
+    assert_true(run_background("   ").starts_with("error:"))
+}
+
+fun test_each_shell_gets_its_own_id() {
+    let a = run_background("echo one")
+    let b = run_background("echo two")
+    assert_true(a != b)
+}

@@ -74,7 +74,13 @@ model whose provider has no key opens the key prompt automatically.
 The model can call:
 
 - `read_file`, `list_dir`, `grep` (read-only, run automatically)
-- `write_file`, `edit_file`, `run_command` (mutating, approved by you)
+- `write_file`, `edit_file`, `run_command`, `run_background` (mutating,
+  approved by you)
+
+`run_background` starts a long-running command (a dev server, a
+watcher, an app rook just built) and returns a shell id immediately
+instead of blocking; the output collects in the background. Tools to
+read, list, and kill background shells are on the way.
 
 `run_command` runs through the platform shell in the working directory and
 returns stdout, stderr, and the exit code. Tool output is truncated so a

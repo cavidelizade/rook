@@ -1,0 +1,29 @@
+import std/string
+import std/json { parse, JsonValue }
+import std/test { assert_eq_str, assert_eq_int, assert_true }
+import "./client" { McpTool, parse_tools }
+
+const TOOLS: String = "{\"tools\": [{\"name\": \"echo\", \"description\": \"echoes input\", \"inputSchema\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}}}}, {\"description\": \"no name, dropped\"}, {\"name\": \"add\", \"inputSchema\": {\"type\": \"object\"}}]}"
+
+fun test_parse_tools_reads_name_desc_and_schema() {
+    let tools = parse_tools(_json(TOOLS))
+    // The nameless entry is dropped, leaving echo and add.
+    assert_eq_int(tools.len(), 2)
+    assert_eq_str(tools[0].name, "echo")
+    assert_eq_str(tools[0].description, "echoes input")
+    assert_true(tools[0].schema.contains("properties"))
+    // A tool may have no description.
+    assert_eq_str(tools[1].name, "add")
+    assert_eq_str(tools[1].description, "")
+}
+
+fun test_parse_tools_tolerates_a_missing_tools_array() {
+    assert_eq_int(parse_tools(_json("{}")).len(), 0)
+}
+
+fun _json(text: String) -> JsonValue {
+    return match parse(text) {
+        Ok(j) -> j,
+        Err(e) -> JsonValue.Null,
+    }
+}

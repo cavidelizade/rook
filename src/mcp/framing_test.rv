@@ -1,0 +1,45 @@
+import std/string
+import std/test { assert_eq_str, assert_true }
+import "./framing" { LineBuffer }
+
+fun test_yields_complete_lines_only() {
+    let b = LineBuffer.new()
+    b.push("hello\nwor")
+    // The first line is complete; the partial second is held back.
+    assert_eq_str(_line(b), "hello")
+    assert_true(_none(b))
+    // The rest of the second line completes it.
+    b.push("ld\n")
+    assert_eq_str(_line(b), "world")
+    assert_true(_none(b))
+}
+
+fun test_multiple_lines_in_one_chunk() {
+    let b = LineBuffer.new()
+    b.push("a\nb\nc\n")
+    assert_eq_str(_line(b), "a")
+    assert_eq_str(_line(b), "b")
+    assert_eq_str(_line(b), "c")
+    assert_true(_none(b))
+}
+
+fun test_strips_carriage_return() {
+    let b = LineBuffer.new()
+    b.push("crlf\r\nnext\r\n")
+    assert_eq_str(_line(b), "crlf")
+    assert_eq_str(_line(b), "next")
+}
+
+fun _line(b: LineBuffer) -> String {
+    return match b.next_line() {
+        Some(s) -> s,
+        None -> "<none>",
+    }
+}
+
+fun _none(b: LineBuffer) -> Bool {
+    return match b.next_line() {
+        Some(s) -> false,
+        None -> true,
+    }
+}

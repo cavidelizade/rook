@@ -1,5 +1,6 @@
 import std/string
 import std/test { assert_true }
+import std/fs { write, remove_file }
 import "./git" { git_status, git_diff, git_commit, commit_preview }
 
 // These run against the real repository the suite executes in, which is a
@@ -41,4 +42,18 @@ fun test_commit_preview_is_read_only_and_never_errors() {
     let named = commit_preview("definitely_not_a_real_file_zzz")
     assert_true(!named.starts_with("error:"))
     assert_true(named.contains("no changes"))
+}
+
+// An untracked file named for the commit shows its contents in the preview,
+// not just its name, so a new file cannot be committed sight unseen. Reading a
+// preview never stages or commits, so this is safe against the live checkout.
+fun test_commit_preview_shows_untracked_file_contents() {
+    // A name that git does not ignore (the repo ignores _rook_*), so it shows
+    // as untracked and exercises the added-file preview.
+    write("preview_untracked_tmp.txt", "a brand new line")
+    let p = commit_preview("preview_untracked_tmp.txt")
+    assert_true(p.contains("preview_untracked_tmp.txt"))
+    assert_true(p.contains("a brand new line"))
+    remove_file("preview_untracked_tmp.txt")
+    return
 }

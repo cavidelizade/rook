@@ -5,7 +5,9 @@
 // message is fed to `git commit -F -` on stdin.
 
 import std/string
+import std/fs { read, is_file }
 import std/process { run, run_with_input, Output }
+import "../ui/diff" { unified }
 
 const MAX_DIFF: Int = 6000
 
@@ -101,11 +103,17 @@ fun commit_preview(paths: String) -> String {
         }
         diff = _git(["diff", "--cached"]).stdout
     } else {
-        files = _git(_with_paths(["status", "--short", "--"], want)).stdout.trim()
+        let status = _git(_with_paths(["status", "--short", "--"], want)).stdout
+        files = status.trim()
         if files == "" {
             return "(no changes in the named paths)"
         }
+        // Tracked changes come from the diff against HEAD; untracked named
+        // files have no HEAD diff, so render their contents as an added-file
+        // diff too, or the preview would list them without showing what will
+        // be committed.
         diff = _git(_with_paths(["diff", "HEAD", "--"], want)).stdout
+        diff = "${diff}${_untracked_diff(status)}"
     }
     let head = "Files to commit:\n${files}"
     let body = diff.trim()
@@ -116,6 +124,34 @@ fun commit_preview(paths: String) -> String {
         body = "${body.substring(0, MAX_DIFF)}\n… (diff truncated)"
     }
     return "${head}\n\n${body}"
+}
+
+// An added-file diff for each untracked entry in a `git status --short`
+// listing (lines that start with "??"), so a new file named for the commit
+// shows its contents in the preview and not just its name. Uses rook's own
+// unified renderer, the same all-additions view write_file previews use, so it
+// is deterministic and needs no /dev/null diff.
+fun _untracked_diff(status: String) -> String {
+    let out = ""
+    let lines = status.split("\n")
+    let i = 0
+    while i < lines.len() {
+        let line = lines[i]
+        if line.starts_with("??") {
+            let path = line.substring(3, line.length()).trim()
+            if path != "" && is_file(path) {
+                let content = match read(path) {
+                    Ok(s) -> s,
+                    Err(e) -> "",
+                }
+                if content != "" {
+                    out = "${out}\nnew file ${path}\n${unified("", content)}"
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
 }
 
 // True when the index holds staged changes (git diff --cached --quiet exits

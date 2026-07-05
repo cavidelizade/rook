@@ -315,6 +315,10 @@ hook that exits non-zero blocks the tool, and its output is fed back to
 the model as the reason; every other event is observe-only. Because
 plugins are just another root, a plugin can ship hooks the same way.
 
+Working examples are in [`examples/hooks/`](examples/hooks/): block a
+dangerous command, format a file after an edit, and notify when a turn
+ends, with a `settings.json` to copy.
+
 ## How it is built
 
 rook is a plumage app. The one interesting problem is that a streamed

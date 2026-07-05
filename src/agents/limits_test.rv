@@ -34,3 +34,16 @@ fun test_clip_line_adds_an_ellipsis_when_long() {
     assert_true(out.contains("…"))
     assert_true(!out.contains("bbbbbb"))
 }
+
+// The cut must land on a character boundary. "é" is two bytes (0xC3 0xA9), so
+// cutting at byte 5 falls in the middle of the third "é"; the cut backs off to
+// byte 4 and keeps two whole characters, never a split byte.
+fun test_cap_text_never_splits_a_multibyte_character() {
+    let out = cap_text(_repeat("é", 100), 5, "skill body")
+    assert_true(out.starts_with("éé"))
+    assert_true(!out.starts_with("ééé"))
+    // The byte right after the kept text is the newline before the marker, so
+    // nothing dangles mid-character.
+    assert_true(out.byte_at(4) == 10)
+    assert_true(out.contains("[truncated: skill body]"))
+}

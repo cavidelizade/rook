@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "pre-tool": [
+      { "match": "run_command", "command": "sh examples/hooks/deny-dangerous.sh" }
+    ],
+    "post-tool": [
+      { "match": "write_file", "command": "sh examples/hooks/format-on-edit.sh" },
+      { "match": "edit_file", "command": "sh examples/hooks/format-on-edit.sh" }
+    ],
+    "turn-end": [
+      { "command": "sh examples/hooks/notify-turn-end.sh" }
+    ]
+  }
+}

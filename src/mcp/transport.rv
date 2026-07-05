@@ -1,0 +1,174 @@
+// The JSON-RPC 2.0 transport over an MCP server's stdio. McpConn owns the
+// server subprocess: it writes request lines to the child's stdin and reads
+// response lines from its stdout (draining through a LineBuffer), correlating
+// synchronously since only one request is outstanding at a time. Server
+// notifications and non-JSON stdout noise are skipped while waiting for a
+// response.
+
+import std/string
+import std/sync { sleep_millis }
+import std/json { JsonValue, parse, stringify }
+import std/process { Child }
+import "github.com/martian56/aviary/jsonutil" { field, as_str }
+import "./framing" { LineBuffer }
+
+// Encode a string as a JSON string literal (quoted and escaped).
+fun enc_str(s: String) -> String {
+    return stringify(JsonValue.Str(s))
+}
+
+// A JSON-RPC request line. `params` is a JSON value already ("" for none).
+fun build_request(id: Int, method: String, params: String) -> String {
+    let head = "{\"jsonrpc\":\"2.0\",\"id\":${id},\"method\":${enc_str(method)}"
+    if params == "" {
+        return head.concat("}\n")
+    }
+    return head.concat(",\"params\":").concat(params).concat("}\n")
+}
+
+// A JSON-RPC notification line (no id, so no response is expected).
+fun build_notification(method: String, params: String) -> String {
+    let head = "{\"jsonrpc\":\"2.0\",\"method\":${enc_str(method)}"
+    if params == "" {
+        return head.concat("}\n")
+    }
+    return head.concat(",\"params\":").concat(params).concat("}\n")
+}
+
+// A parsed JSON-RPC response: ok with a result, or an error message.
+struct RpcResponse {
+    ok: Bool,
+    error: String,
+    result: JsonValue,
+}
+
+// Parse one message line. A response (carries result or error) yields Some; a
+// server notification or request (a method, no result/error) or a non-JSON
+// line yields None, so the reader skips it and keeps waiting.
+fun parse_message(line: String) -> Option<RpcResponse> {
+    return match parse(line) {
+        Ok(j) -> _from_value(j),
+        Err(e) -> None,
+    }
+}
+
+fun _from_value(j: JsonValue) -> Option<RpcResponse> {
+    match j.get("error") {
+        Some(e) -> {
+            return Some(RpcResponse { ok: false, error: _err_text(e), result: JsonValue.Null })
+        },
+        None -> {},
+    }
+    match j.get("result") {
+        Some(r) -> {
+            return Some(RpcResponse { ok: true, error: "", result: r })
+        },
+        None -> {},
+    }
+    return None
+}
+
+fun _err_text(e: JsonValue) -> String {
+    let msg = as_str(field(e, "message"))
+    if msg == "" {
+        return "server error"
+    }
+    return msg
+}
+
+// A live connection to an MCP server subprocess.
+struct McpConn {
+    child: Child,
+    buf: LineBuffer,
+    next_id: Int,
+}
+
+impl McpConn {
+    // Send a request and wait for its response, up to timeout_ms.
+    fun request(self, method: String, params: String, timeout_ms: Int) -> RpcResponse {
+        let id = self.next_id
+        self.next_id = self.next_id + 1
+        if !self.child.write_stdin(build_request(id, method, params)) {
+            return RpcResponse {
+                ok: false,
+                error: "could not write to the server (it may have exited)",
+                result: JsonValue.Null,
+            }
+        }
+        return self.read_response(timeout_ms)
+    }
+
+    // Send a notification; nothing comes back.
+    fun notify(self, method: String, params: String) {
+        let ignored = self.child.write_stdin(build_notification(method, params))
+        return
+    }
+
+    // Read until a response arrives, the server exits, or the timeout passes.
+    fun read_response(self, timeout_ms: Int) -> RpcResponse {
+        let waited = 0
+        while waited < timeout_ms {
+            self.buf.push(self.child.read_stdout())
+            match self._take_response() {
+                Some(resp) -> {
+                    return resp
+                },
+                None -> {},
+            }
+            if !self.child.running() {
+                // The response and the exit can race; drain once more.
+                self.buf.push(self.child.read_stdout())
+                match self._take_response() {
+                    Some(resp) -> {
+                        return resp
+                    },
+                    None -> {
+                        return RpcResponse {
+                            ok: false,
+                            error: "the server exited before responding",
+                            result: JsonValue.Null,
+                        }
+                    },
+                }
+            }
+            sleep_millis(10)
+            waited = waited + 10
+        }
+        return RpcResponse {
+            ok: false,
+            error: "the server did not respond within ${timeout_ms}ms",
+            result: JsonValue.Null,
+        }
+    }
+
+    // The next response among the buffered complete lines, skipping blank
+    // lines, notifications, and non-JSON noise. None when none is buffered.
+    fun _take_response(self) -> Option<RpcResponse> {
+        let scanning = true
+        while scanning {
+            match self.buf.next_line() {
+                Some(line) -> {
+                    if line.trim() != "" {
+                        match parse_message(line) {
+                            Some(resp) -> {
+                                return Some(resp)
+                            },
+                            None -> {},
+                        }
+                    }
+                },
+                None -> {
+                    scanning = false
+                },
+            }
+        }
+        return None
+    }
+
+    // Stop the server and release the handle.
+    fun close(self) {
+        let killed = self.child.kill()
+        self.child.free()
+        return
+    }
+}

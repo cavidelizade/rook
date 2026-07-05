@@ -1,0 +1,128 @@
+// An MCP client: launch a server, run the initialize handshake, and list what
+// it offers. connect returns a McpClient whether or not it succeeded; on
+// failure `ok` is false and `error` explains, so a caller (the /mcp command)
+// can show the status either way. The live connection is kept so tools can be
+// invoked later (#41).
+
+import std/string
+import std/json { JsonValue, stringify }
+import std/process { Child, start }
+import "github.com/martian56/aviary/jsonutil" { field, as_str, as_list }
+import "./framing" { LineBuffer }
+import "./transport" { McpConn, RpcResponse }
+
+const PROTOCOL: String = "2024-11-05"
+const HANDSHAKE_TIMEOUT: Int = 20000
+const LIST_TIMEOUT: Int = 15000
+
+struct McpTool {
+    name: String,
+    description: String,
+    schema: String,
+}
+
+struct McpClient {
+    name: String,
+    server_name: String,
+    server_version: String,
+    tools: List<McpTool>,
+    ok: Bool,
+    error: String,
+    conn: Option<McpConn>,
+}
+
+impl McpClient {
+    // Call a method on the connected server (used to invoke a tool). Errors
+    // when the client never connected.
+    fun call(self, method: String, params: String, timeout_ms: Int) -> RpcResponse {
+        return match self.conn {
+            Some(c) -> c.request(method, params, timeout_ms),
+            None -> RpcResponse { ok: false, error: "not connected", result: JsonValue.Null },
+        }
+    }
+
+    // Stop the server, if one is running.
+    fun close(self) {
+        match self.conn {
+            Some(c) -> c.close(),
+            None -> {},
+        }
+        return
+    }
+}
+
+// Launch and connect to an MCP server: start the process, run the handshake,
+// and list its tools.
+fun connect(name: String, command: String, cmd_args: List<String>) -> McpClient {
+    return match start(command, cmd_args) {
+        Ok(child) -> _handshake(name, McpConn { child, buf: LineBuffer.new(), next_id: 1 }),
+        Err(e) -> _failed(name, "could not start '${command}': ${e.message}"),
+    }
+}
+
+fun _handshake(name: String, conn: McpConn) -> McpClient {
+    let resp = conn.request("initialize", _init_params(), HANDSHAKE_TIMEOUT)
+    if !resp.ok {
+        conn.close()
+        return _failed(name, "handshake failed: ${resp.error}")
+    }
+    let info = field(resp.result, "serverInfo")
+    conn.notify("notifications/initialized", "")
+    return McpClient {
+        name,
+        server_name: as_str(field(info, "name")),
+        server_version: as_str(field(info, "version")),
+        tools: _list_tools(conn),
+        ok: true,
+        error: "",
+        conn: Some(conn),
+    }
+}
+
+fun _list_tools(conn: McpConn) -> List<McpTool> {
+    let resp = conn.request("tools/list", "{}", LIST_TIMEOUT)
+    if !resp.ok {
+        let empty: List<McpTool> = []
+        return empty
+    }
+    return parse_tools(resp.result)
+}
+
+// Extract the tools from a tools/list result. Pure, so it is tested directly.
+// Each tool keeps its raw input schema for registration.
+fun parse_tools(result: JsonValue) -> List<McpTool> {
+    let out: List<McpTool> = []
+    let arr = as_list(field(result, "tools"))
+    let i = 0
+    while i < arr.len() {
+        let name = as_str(field(arr[i], "name"))
+        if name != "" {
+            out.push(
+                McpTool {
+                    name,
+                    description: as_str(field(arr[i], "description")),
+                    schema: stringify(field(arr[i], "inputSchema")),
+                },
+            )
+        }
+        i = i + 1
+    }
+    return out
+}
+
+fun _init_params() -> String {
+    return "{\"protocolVersion\":\"${PROTOCOL}\",\"capabilities\":{},\"clientInfo\":{\"name\":\"rook\",\"version\":\"1.0\"}}"
+}
+
+fun _failed(name: String, why: String) -> McpClient {
+    let empty: List<McpTool> = []
+    return McpClient {
+        name,
+        server_name: "",
+        server_version: "",
+        tools: empty,
+        ok: false,
+        error: why,
+        conn: None,
+    }
+}

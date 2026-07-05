@@ -1,0 +1,68 @@
+import std/string
+import std/test { assert_eq_str, assert_true }
+import "./transport" { build_request, build_notification, parse_message, enc_str, RpcResponse }
+
+fun test_build_request_with_and_without_params() {
+    assert_eq_str(
+        build_request(1, "initialize", "{\"a\":1}"),
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"a\":1}}\n",
+    )
+    // No params omits the params key entirely.
+    assert_eq_str(
+        build_request(7, "tools/list", ""),
+        "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/list\"}\n",
+    )
+}
+
+fun test_build_notification_has_no_id() {
+    assert_eq_str(
+        build_notification("notifications/initialized", ""),
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
+    )
+}
+
+fun test_enc_str_escapes() {
+    // A method or value with a quote must not break the framing.
+    assert_eq_str(enc_str("a\"b"), "\"a\\\"b\"")
+}
+
+fun test_parse_message_result() {
+    match parse_message("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}") {
+        Some(r) -> {
+            assert_true(r.ok)
+        },
+        None -> {
+            assert_true(false)
+        },
+    }
+}
+
+fun test_parse_message_error_carries_the_message() {
+    match parse_message(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"no method\"}}",
+    ) {
+        Some(r) -> {
+            assert_true(!r.ok)
+            assert_eq_str(r.error, "no method")
+        },
+        None -> {
+            assert_true(false)
+        },
+    }
+}
+
+fun test_parse_message_skips_notifications_and_noise() {
+    // A server notification (a method, no result/error) is not a response.
+    assert_true(
+        _is_none(parse_message("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\"}")),
+    )
+    // A non-JSON log line is skipped too.
+    assert_true(_is_none(parse_message("starting up...")))
+}
+
+fun _is_none(o: Option<RpcResponse>) -> Bool {
+    return match o {
+        Some(r) -> false,
+        None -> true,
+    }
+}

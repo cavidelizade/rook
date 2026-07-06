@@ -25,6 +25,11 @@ struct SettingsLoad {
     error: String,
 }
 
+struct SettingsSectionLoad {
+    section: Option<JsonValue>,
+    error: String,
+}
+
 // A top-level string field from the settings.json under `root`, "" when the
 // root is empty, the file is absent or unreadable, or the field is not a
 // string.
@@ -50,13 +55,25 @@ fun setting_from(text: String, key: String) -> String {
 // A top-level object section (permissions, tools, mcp) from the settings
 // under `root`, for the features that consume them. None when absent.
 fun setting_section(root: String, key: String) -> Option<JsonValue> {
+    return setting_section_load(root, key).section
+}
+
+// A top-level object section with any settings load or parse error from the
+// same pass, for hot paths that need to fail closed.
+fun setting_section_load(root: String, key: String) -> SettingsSectionLoad {
     let loaded = load_settings(root)
-    if !loaded.present || loaded.error != "" || loaded.text.trim() == "" {
-        return None
+    if loaded.error != "" {
+        return SettingsSectionLoad { section: None, error: loaded.error }
+    }
+    if !loaded.present || loaded.text.trim() == "" {
+        return SettingsSectionLoad { section: None, error: "" }
     }
     return match parse(loaded.text) {
-        Ok(j) -> j.get(key),
-        Err(e) -> None,
+        Ok(j) -> SettingsSectionLoad { section: j.get(key), error: "" },
+        Err(e) -> SettingsSectionLoad {
+            section: None,
+            error: _invalid_json_error(loaded.path, e.message),
+        },
     }
 }
 
@@ -81,28 +98,32 @@ fun load_settings(root: String) -> SettingsLoad {
     }
 }
 
+// The error for one settings root, if the file exists but cannot be used.
+fun settings_error_for(root: String) -> Option<String> {
+    let loaded = setting_section_load(root, "")
+    if loaded.error != "" {
+        return Some(loaded.error)
+    }
+    return None
+}
+
 // Human-readable diagnostics for settings files that exist but cannot be
 // used. Missing files stay quiet.
 fun settings_errors_from(rs: List<String>) -> List<String> {
     let out: List<String> = []
     let i = 0
     while i < rs.len() {
-        let loaded = load_settings(rs[i])
-        if loaded.error != "" {
-            out.push(loaded.error)
-        } else {
-            if loaded.present && loaded.text.trim() != "" {
-                match parse(loaded.text) {
-                    Ok(j) -> {},
-                    Err(e) -> {
-                        out.push("settings error: invalid JSON in ${loaded.path}: ${e.message}")
-                    },
-                }
-            }
+        match settings_error_for(rs[i]) {
+            Some(msg) -> out.push(msg),
+            None -> {},
         }
         i = i + 1
     }
     return out
+}
+
+fun _invalid_json_error(path: String, message: String) -> String {
+    return "settings error: invalid JSON in ${path}: ${message}"
 }
 
 fun _field_str(j: JsonValue, key: String) -> String {
